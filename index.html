@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Proyecto 19 - Reportes de Ocupación</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+</head>
+<body>
+    <!-- HEADER -->
+    <nav class="navbar">
+        <div class="navbar-brand">
+            <h1>📊 Sistema de Reportes - Ocupación de Hospedaje</h1>
+            <p class="subtitle">Campamentos Mineros - Abril 2026</p>
+        </div>
+        <div class="navbar-info">
+            <span>Base de Datos: hospestar | Registros: 3,219</span>
+        </div>
+    </nav>
+
+    <!-- CONTENEDOR PRINCIPAL -->
+    <div class="container">
+        <!-- MENÚ LATERAL -->
+        <aside class="sidebar">
+            <div class="menu-group">
+                <h3>📋 Reportes Disponibles</h3>
+                
+                <button class="btn-report active" onclick="selectReport(1)">
+                    <span class="icon">1</span>
+                    <span class="text">Resumen por Banda y Género</span>
+                </button>
+                
+                <button class="btn-report" onclick="selectReport(2)">
+                    <span class="icon">2</span>
+                    <span class="text">Resumen Total por Género</span>
+                </button>
+                
+                <button class="btn-report" onclick="selectReport(3)">
+                    <span class="icon">3</span>
+                    <span class="text">Resumen por Módulo y Nivel</span>
+                </button>
+                
+                <button class="btn-report" onclick="selectReport(4)">
+                    <span class="icon">4</span>
+                    <span class="text">Ocupabilidad Histórica</span>
+                </button>
+            </div>
+
+            <div class="menu-info">
+                <h4>💡 Instrucciones:</h4>
+                <p>1. Selecciona un reporte del menú</p>
+                <p>2. Elige la(s) fecha(s)</p>
+                <p>3. Haz clic en "Ver Reporte"</p>
+            </div>
+        </aside>
+
+        <!-- ÁREA PRINCIPAL -->
+        <main class="main-content">
+            <!-- TÍTULO Y FILTROS -->
+            <section class="date-filter-section">
+                <h2 id="report-title">Reporte 1: Resumen por Banda y Género</h2>
+                
+                <div class="date-filters" id="date-filters">
+                    <!-- Se carga dinámicamente con JavaScript -->
+                </div>
+
+                <div class="action-buttons">
+                    <button class="btn-primary" onclick="loadReport()">
+                        📊 Ver Reporte
+                    </button>
+                    <button class="btn-secondary" onclick="exportToExcel()">
+                        ⬇️ Descargar Excel
+                    </button>
+                </div>
+            </section>
+
+            <!-- ÁREA DE REPORTE -->
+            <section class="report-section">
+                <!-- LOADING -->
+                <div id="loading" class="loader" style="display:none;">
+                    <div class="spinner"></div>
+                    <p>Cargando datos del reporte...</p>
+                </div>
+                
+                <!-- CONTENIDO DEL REPORTE -->
+                <div id="report-container" class="report-container">
+                    <div class="placeholder">
+                        <h3>👈 Selecciona un reporte</h3>
+                        <p>Elige una opción del menú lateral y haz clic en "Ver Reporte"</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- INFORMACIÓN ADICIONAL -->
+            <section class="info-section" id="info-section" style="display:none;">
+                <h3>ℹ️ Información del Reporte</h3>
+                <div id="report-info"></div>
+            </section>
+        </main>
+    </div>
+
+    <!-- FOOTER -->
+    <footer class="footer">
+        <p>&copy; 2026 Proyecto 19 - Sistema de Reportes | Última actualización: <span id="last-update"></span></p>
+    </footer>
+
+    <!-- SCRIPTS -->
+    <script src="app.js"></script>
+    <script>
+        document.getElementById('last-update').textContent = new Date().toLocaleDateString('es-ES');
+    </script>
+</body>
+</html>
