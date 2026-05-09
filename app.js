@@ -69,14 +69,14 @@ function updateDateFilters(reportNumber) {
         filtersContainer.innerHTML = `
             <div class="date-group">
                 <label for="single-date">📅 ${report.dateLabel}</label>
-                <input type="date" id="single-date" value="2026-04-01">
+                <input type="date" id="single-date" value="2026-04-12">
             </div>
         `;
     } else if (report.dateType === 'range') {
         filtersContainer.innerHTML = `
             <div class="date-group">
                 <label for="from-date">📅 Desde:</label>
-                <input type="date" id="from-date" value="2026-04-01">
+                <input type="date" id="from-date" value="2026-04-12">
             </div>
             <div class="date-group">
                 <label for="to-date">📅 Hasta:</label>
@@ -153,7 +153,14 @@ async function fetchReport4() {
 // ========== RENDERIZAR TABLAS ==========
 function renderTable1(data) {
     const container = document.getElementById('report-container');
-    
+
+    // Agrupar por Banda
+    const bandas = {};
+    data.forEach(row => {
+        if (!bandas[row.Banda]) bandas[row.Banda] = [];
+        bandas[row.Banda].push(row);
+    });
+
     let html = '<table class="report-table"><thead><tr>';
     html += '<th>Etiquetas de fila</th>';
     html += '<th class="text-right">MASCULINO</th>';
@@ -161,24 +168,39 @@ function renderTable1(data) {
     html += '<th class="text-right">Total general</th>';
     html += '</tr></thead><tbody>';
 
-    data.forEach(row => {
-        html += '<tr>';
-        html += `<td><strong>${row.banda}</strong></td>`;
-        html += `<td class="text-right">${row.masculino || 0}</td>`;
-        html += `<td class="text-right">${row.femenino || 0}</td>`;
-        html += `<td class="text-right"><strong>${row.total || 0}</strong></td>`;
-        html += '</tr>';
-    });
+    let totalM = 0, totalF = 0, totalG = 0;
 
-    const totalM = data.reduce((sum, row) => sum + (row.masculino || 0), 0);
-    const totalF = data.reduce((sum, row) => sum + (row.femenino || 0), 0);
-    const totalGeneral = data.reduce((sum, row) => sum + (row.total || 0), 0);
+    Object.keys(bandas).sort().forEach(banda => {
+        const empresas = bandas[banda];
+        const bM = empresas.reduce((s, r) => s + (r.masculino || 0), 0);
+        const bF = empresas.reduce((s, r) => s + (r.femenino || 0), 0);
+        const bT = empresas.reduce((s, r) => s + (r.total || 0), 0);
+        totalM += bM; totalF += bF; totalG += bT;
+
+        // Fila de banda (negrita)
+        html += `<tr class="row-banda">`;
+        html += `<td><strong>⊟ ${banda}</strong></td>`;
+        html += `<td class="text-right"><strong>${bM}</strong></td>`;
+        html += `<td class="text-right"><strong>${bF}</strong></td>`;
+        html += `<td class="text-right"><strong>${bT}</strong></td>`;
+        html += '</tr>';
+
+        // Filas de empresa (detalle)
+        empresas.forEach(row => {
+            html += '<tr class="row-empresa">';
+            html += `<td>&nbsp;&nbsp;&nbsp;&nbsp;${row.empresa}</td>`;
+            html += `<td class="text-right">${row.masculino || 0}</td>`;
+            html += `<td class="text-right">${row.femenino || 0}</td>`;
+            html += `<td class="text-right">${row.total || 0}</td>`;
+            html += '</tr>';
+        });
+    });
 
     html += '</tbody><tfoot><tr>';
     html += '<td><strong>Total general</strong></td>';
     html += `<td class="text-right"><strong>${totalM}</strong></td>`;
     html += `<td class="text-right"><strong>${totalF}</strong></td>`;
-    html += `<td class="text-right"><strong>${totalGeneral}</strong></td>`;
+    html += `<td class="text-right"><strong>${totalG}</strong></td>`;
     html += '</tr></tfoot></table>';
 
     container.innerHTML = html;
@@ -360,7 +382,7 @@ function showError(message) {
         <div class="error-message">
             <strong>❌ Error</strong>
             <p>${message}</p>
-            <p><small>Verifica que el servidor esté corriendo en http://localhost:3000</small></p>
+            <p><small>Verifica que el servidor esté corriendo en http://localhost:4000</small></p>
         </div>
     `;
 }

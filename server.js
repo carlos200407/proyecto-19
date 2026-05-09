@@ -33,20 +33,26 @@ query("SELECT 1 AS ok")
     .catch(err => console.error('❌ Error BD:', err.message));
 
 // ─── REPORTE 1: Resumen por Banda y Género ───────────────────────────────────
+// Agrupa por Banda > Empresa, cuenta MASCULINO/FEMENINO
+// Solo registros Tipo='M' (ocupados) con GeneroH válido
 app.get('/api/reports/banda-genero', async (req, res) => {
     const { fecha } = req.query;
     if (!fecha) return res.status(400).json({ error: 'Falta el parámetro fecha' });
     try {
         const rows = await query(`
             SELECT
-                Banda AS banda,
-                SUM(CASE WHEN genero = 'M' THEN 1 ELSE 0 END) AS masculino,
-                SUM(CASE WHEN genero = 'F' THEN 1 ELSE 0 END) AS femenino,
+                Banda,
+                nombreempr AS empresa,
+                SUM(CASE WHEN GeneroH = 'MASCULINO' THEN 1 ELSE 0 END) AS masculino,
+                SUM(CASE WHEN GeneroH = 'FEMENINO'  THEN 1 ELSE 0 END) AS femenino,
                 COUNT(*) AS total
-            FROM HistoryOcu
+            FROM [dbo].[HistoryOcu]
             WHERE CAST(FechaPer AS DATE) = ?
-            GROUP BY Banda
-            ORDER BY Banda
+              AND Tipo = 'M'
+              AND GeneroH IN ('MASCULINO', 'FEMENINO')
+              AND Banda <> ''
+            GROUP BY Banda, nombreempr
+            ORDER BY Banda, nombreempr
         `, [fecha]);
         res.json(rows);
     } catch (err) {
@@ -56,19 +62,22 @@ app.get('/api/reports/banda-genero', async (req, res) => {
 });
 
 // ─── REPORTE 2: Total por Género ─────────────────────────────────────────────
+// Solo registros ocupados (Tipo='M') con género válido
 app.get('/api/reports/total-genero', async (req, res) => {
     const { fecha } = req.query;
     if (!fecha) return res.status(400).json({ error: 'Falta el parámetro fecha' });
     try {
         const rows = await query(`
             SELECT
-                genero AS genero,
+                GeneroH AS genero,
                 COUNT(*) AS cantidad,
-                CAST(ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (), 2) AS DECIMAL(5,2)) AS porcentaje
-            FROM HistoryOcu
+                CAST(ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (), 0) AS INT) AS porcentaje
+            FROM [dbo].[HistoryOcu]
             WHERE CAST(FechaPer AS DATE) = ?
-            GROUP BY genero
-            ORDER BY genero
+              AND Tipo = 'M'
+              AND GeneroH IN ('MASCULINO', 'FEMENINO')
+            GROUP BY GeneroH
+            ORDER BY GeneroH
         `, [fecha]);
         res.json(rows);
     } catch (err) {
@@ -77,21 +86,32 @@ app.get('/api/reports/total-genero', async (req, res) => {
     }
 });
 
-// ─── REPORTE 3: Por Módulo (Edificio) y Nivel ────────────────────────────────
+// ─── REPORTE 3: Por Módulo y Nivel ───────────────────────────────────────────
+// Módulos reales: Manager, Worker01, Worker02
+// Niveles reales ocupados: WK, STAF TECK, STAFF
+// Disponible = Tipo='L', Ocupado = Tipo='M'
 app.get('/api/reports/modulo-nivel', async (req, res) => {
     const { fecha } = req.query;
     if (!fecha) return res.status(400).json({ error: 'Falta el parámetro fecha' });
     try {
         const rows = await query(`
             SELECT
-                CONCAT(nombreedif, ' / ', Nombre) AS modulo,
-                SUM(CASE WHEN ESTADO = 'D' THEN 1 ELSE 0 END) AS disponible,
-                SUM(CASE WHEN ESTADO = 'O' THEN 1 ELSE 0 END) AS ocupado,
+                nombreedif AS modulo,
+                CASE
+                    WHEN NivelHuesped IN ('WK','STAF TECK','STAFF') THEN NivelHuesped
+                    ELSE 'Sin nivel'
+                END AS nivel,
+                SUM(CASE WHEN Tipo = 'L' THEN 1 ELSE 0 END) AS disponible,
+                SUM(CASE WHEN Tipo = 'M' THEN 1 ELSE 0 END) AS ocupado,
                 COUNT(*) AS total
-            FROM HistoryOcu
+            FROM [dbo].[HistoryOcu]
             WHERE CAST(FechaPer AS DATE) = ?
-            GROUP BY nombreedif, Nombre
-            ORDER BY nombreedif, Nombre
+            GROUP BY nombreedif,
+                     CASE
+                         WHEN NivelHuesped IN ('WK','STAF TECK','STAFF') THEN NivelHuesped
+                         ELSE 'Sin nivel'
+                     END
+            ORDER BY nombreedif, nivel
         `, [fecha]);
         res.json(rows);
     } catch (err) {
@@ -101,6 +121,7 @@ app.get('/api/reports/modulo-nivel', async (req, res) => {
 });
 
 // ─── REPORTE 4: Ocupabilidad Histórica ──────────────────────────────────────
+// Cuenta ocupantes reales (Tipo='M') por día en el rango
 app.get('/api/reports/ocupabilidad', async (req, res) => {
     const { desde, hasta } = req.query;
     if (!desde || !hasta) return res.status(400).json({ error: 'Faltan parámetros desde/hasta' });
@@ -109,8 +130,9 @@ app.get('/api/reports/ocupabilidad', async (req, res) => {
             SELECT
                 CAST(FechaPer AS DATE) AS fecha,
                 COUNT(*) AS ocupantes
-            FROM HistoryOcu
+            FROM [dbo].[HistoryOcu]
             WHERE CAST(FechaPer AS DATE) BETWEEN ? AND ?
+              AND Tipo = 'M'
             GROUP BY CAST(FechaPer AS DATE)
             ORDER BY CAST(FechaPer AS DATE)
         `, [desde, hasta]);
