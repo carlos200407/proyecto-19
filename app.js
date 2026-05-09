@@ -4,7 +4,7 @@
 
 // Variables globales
 let currentReport = 1;
-const API_URL = 'http://localhost:3000/api';
+const API_URL = 'http://localhost:4000/api';
 
 // Configuración de reportes
 const reports = {

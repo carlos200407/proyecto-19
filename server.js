@@ -1,262 +1,132 @@
 // ============================================
-// PROYECTO 19 - SERVIDOR NODE.JS
+// PROYECTO 19 - SERVIDOR BACKEND (server.js)
 // ============================================
 
 const express = require('express');
 const cors = require('cors');
-const sql = require('mssql');
 const path = require('path');
+const sql = require('msnodesqlv8');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = 4000;
 
-// Middleware (SIN express.static aquí)
+// ─── CONFIGURACIÓN ──────────────────────────────────────────────────────────
+const connStr = "Driver={SQL Server};Server=localhost;Database=hospestar;Trusted_Connection=yes;";
+
 app.use(cors());
 app.use(express.json());
+app.use(express.static(path.join(__dirname)));
 
-// ========== CONFIGURACIÓN SQL SERVER ==========
-const dbConfig = {
-    user: 'proyecto19',
-    password: 'Proyecto123',
-    server: 'localhost',
-    database: 'hospestar',
-    options: {
-        encrypt: false,
-        enableArithAbort: true
-    }
-};
-
-// Pool de conexión
-let pool;
-
-async function initializePool() {
-    try {
-        pool = await sql.connect(dbConfig);
-        console.log('✅ Conectado a SQL Server');
-    } catch (error) {
-        console.error('❌ Error al conectar SQL Server:', error.message);
-        console.error('💡 Verifica: usuario, contraseña, servidor en dbConfig');
-        process.exit(1);
-    }
+// ─── HELPER ─────────────────────────────────────────────────────────────────
+function query(sqlStr, params = []) {
+    return new Promise((resolve, reject) => {
+        sql.query(connStr, sqlStr, params, (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows);
+        });
+    });
 }
 
-// ========== RUTAS DE API (PRIMERO) ==========
+// ─── TEST CONEXIÓN ───────────────────────────────────────────────────────────
+query("SELECT 1 AS ok")
+    .then(() => console.log('✅ Conectado a SQL Server - hospestar'))
+    .catch(err => console.error('❌ Error BD:', err.message));
 
-// Health check
-app.get('/api/health', (req, res) => {
-    res.json({
-        status: 'OK',
-        timestamp: new Date(),
-        database: 'hospestar',
-        message: 'Servidor funcionando correctamente'
-    });
-});
-
-// ========== REPORTE 1: BANDA Y GÉNERO ==========
+// ─── REPORTE 1: Resumen por Banda y Género ───────────────────────────────────
 app.get('/api/reports/banda-genero', async (req, res) => {
+    const { fecha } = req.query;
+    if (!fecha) return res.status(400).json({ error: 'Falta el parámetro fecha' });
     try {
-        const { fecha } = req.query;
-
-        if (!fecha) {
-            return res.status(400).json({ error: 'Parámetro fecha requerido' });
-        }
-
-        const query = `
-            SELECT 
-                ISNULL(Banda, 'Sin Banda') as banda,
-                SUM(CASE WHEN GeneroH = 'MASCULINO' THEN 1 ELSE 0 END) as masculino,
-                SUM(CASE WHEN GeneroH = 'FEMENINO' THEN 1 ELSE 0 END) as femenino,
-                COUNT(*) as total
+        const rows = await query(`
+            SELECT
+                Banda AS banda,
+                SUM(CASE WHEN genero = 'M' THEN 1 ELSE 0 END) AS masculino,
+                SUM(CASE WHEN genero = 'F' THEN 1 ELSE 0 END) AS femenino,
+                COUNT(*) AS total
             FROM HistoryOcu
-            WHERE CAST(FechaPer as DATE) = @fecha
+            WHERE CAST(FechaPer AS DATE) = ?
             GROUP BY Banda
             ORDER BY Banda
-        `;
-
-        const request = pool.request();
-        request.input('fecha', sql.Date, fecha);
-        const result = await request.query(query);
-
-        res.json(result.recordset);
-    } catch (error) {
-        console.error('Error en reporte 1:', error);
-        res.status(500).json({ error: 'Error al procesar reporte' });
+        `, [fecha]);
+        res.json(rows);
+    } catch (err) {
+        console.error('Error reporte 1:', err.message);
+        res.status(500).json({ error: err.message });
     }
 });
 
-// ========== REPORTE 2: TOTAL POR GÉNERO ==========
+// ─── REPORTE 2: Total por Género ─────────────────────────────────────────────
 app.get('/api/reports/total-genero', async (req, res) => {
+    const { fecha } = req.query;
+    if (!fecha) return res.status(400).json({ error: 'Falta el parámetro fecha' });
     try {
-        const { fecha } = req.query;
-
-        if (!fecha) {
-            return res.status(400).json({ error: 'Parámetro fecha requerido' });
-        }
-
-        const query = `
-            WITH Totales AS (
-                SELECT 
-                    GeneroH as genero,
-                    COUNT(*) as cantidad
-                FROM HistoryOcu
-                WHERE CAST(FechaPer as DATE) = @fecha
-                GROUP BY GeneroH
-            )
-            SELECT 
-                genero,
-                cantidad,
-                CAST(ROUND(100.0 * cantidad / (SELECT SUM(cantidad) FROM Totales), 0) AS INT) as porcentaje
-            FROM Totales
-            ORDER BY cantidad DESC
-        `;
-
-        const request = pool.request();
-        request.input('fecha', sql.Date, fecha);
-        const result = await request.query(query);
-
-        res.json(result.recordset);
-    } catch (error) {
-        console.error('Error en reporte 2:', error);
-        res.status(500).json({ error: 'Error al procesar reporte' });
+        const rows = await query(`
+            SELECT
+                genero AS genero,
+                COUNT(*) AS cantidad,
+                CAST(ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (), 2) AS DECIMAL(5,2)) AS porcentaje
+            FROM HistoryOcu
+            WHERE CAST(FechaPer AS DATE) = ?
+            GROUP BY genero
+            ORDER BY genero
+        `, [fecha]);
+        res.json(rows);
+    } catch (err) {
+        console.error('Error reporte 2:', err.message);
+        res.status(500).json({ error: err.message });
     }
 });
 
-// ========== REPORTE 3: MÓDULO Y NIVEL ==========
+// ─── REPORTE 3: Por Módulo (Edificio) y Nivel ────────────────────────────────
 app.get('/api/reports/modulo-nivel', async (req, res) => {
+    const { fecha } = req.query;
+    if (!fecha) return res.status(400).json({ error: 'Falta el parámetro fecha' });
     try {
-        const { fecha } = req.query;
-
-        if (!fecha) {
-            return res.status(400).json({ error: 'Parámetro fecha requerido' });
-        }
-
-        const query = `
-            SELECT 
-                CONCAT(ISNULL(Tipo, 'Sin módulo'), ' - ', ISNULL(Codigo, 'Sin nivel')) as modulo,
-                SUM(CASE WHEN Fechasalida > @fecha THEN 1 ELSE 0 END) as disponible,
-                SUM(CASE WHEN Fechasalida <= @fecha THEN 1 ELSE 0 END) as ocupado,
-                COUNT(*) as total
+        const rows = await query(`
+            SELECT
+                CONCAT(nombreedif, ' / ', Nombre) AS modulo,
+                SUM(CASE WHEN ESTADO = 'D' THEN 1 ELSE 0 END) AS disponible,
+                SUM(CASE WHEN ESTADO = 'O' THEN 1 ELSE 0 END) AS ocupado,
+                COUNT(*) AS total
             FROM HistoryOcu
-            WHERE CAST(FechaPer as DATE) = @fecha
-            GROUP BY Tipo, Codigo
-            ORDER BY Tipo, Codigo
-        `;
-
-        const request = pool.request();
-        request.input('fecha', sql.Date, fecha);
-        const result = await request.query(query);
-
-        res.json(result.recordset);
-    } catch (error) {
-        console.error('Error en reporte 3:', error);
-        res.status(500).json({ error: 'Error al procesar reporte' });
+            WHERE CAST(FechaPer AS DATE) = ?
+            GROUP BY nombreedif, Nombre
+            ORDER BY nombreedif, Nombre
+        `, [fecha]);
+        res.json(rows);
+    } catch (err) {
+        console.error('Error reporte 3:', err.message);
+        res.status(500).json({ error: err.message });
     }
 });
 
-// ========== REPORTE 4: OCUPABILIDAD HISTÓRICA ==========
+// ─── REPORTE 4: Ocupabilidad Histórica ──────────────────────────────────────
 app.get('/api/reports/ocupabilidad', async (req, res) => {
+    const { desde, hasta } = req.query;
+    if (!desde || !hasta) return res.status(400).json({ error: 'Faltan parámetros desde/hasta' });
     try {
-        const { desde, hasta } = req.query;
-
-        if (!desde || !hasta) {
-            return res.status(400).json({ 
-                error: 'Parámetros desde y hasta requeridos' 
-            });
-        }
-
-        const query = `
-            SELECT 
-                CONVERT(varchar, CAST(FechaPer as DATE), 23) as fecha,
-                COUNT(DISTINCT dni) as ocupantes
+        const rows = await query(`
+            SELECT
+                CAST(FechaPer AS DATE) AS fecha,
+                COUNT(*) AS ocupantes
             FROM HistoryOcu
-            WHERE CAST(FechaPer as DATE) BETWEEN @desde AND @hasta
-            GROUP BY CAST(FechaPer as DATE)
-            ORDER BY CAST(FechaPer as DATE)
-        `;
-
-        const request = pool.request();
-        request.input('desde', sql.Date, desde);
-        request.input('hasta', sql.Date, hasta);
-        const result = await request.query(query);
-
-        res.json(result.recordset);
-    } catch (error) {
-        console.error('Error en reporte 4:', error);
-        res.status(500).json({ error: 'Error al procesar reporte' });
+            WHERE CAST(FechaPer AS DATE) BETWEEN ? AND ?
+            GROUP BY CAST(FechaPer AS DATE)
+            ORDER BY CAST(FechaPer AS DATE)
+        `, [desde, hasta]);
+        res.json(rows);
+    } catch (err) {
+        console.error('Error reporte 4:', err.message);
+        res.status(500).json({ error: err.message });
     }
 });
 
-// ========== ESTADÍSTICAS GENERALES ==========
-app.get('/api/stats', async (req, res) => {
-    try {
-        const query = `
-            SELECT 
-                COUNT(*) as totalRegistros,
-                COUNT(DISTINCT dni) as dnisUnicos,
-                COUNT(DISTINCT nombreempr) as empresas,
-                COUNT(DISTINCT Banda) as bandas,
-                CONVERT(varchar, MIN(FechaPer), 23) as fechaMinima,
-                CONVERT(varchar, MAX(FechaPer), 23) as fechaMaxima
-            FROM HistoryOcu
-        `;
-
-        const result = await pool.request().query(query);
-        res.json(result.recordset[0]);
-    } catch (error) {
-        console.error('Error en estadísticas:', error);
-        res.status(500).json({ error: 'Error al obtener estadísticas' });
-    }
-});
-
-// ========== ARCHIVOS ESTÁTICOS (AL FINAL) ==========
-app.use(express.static(__dirname));  // ← MOVIDO AQUÍ
-
-// Página principal (catch-all, debe ir al final)
-app.get('*', (req, res) => {
+// ─── RUTA RAÍZ ──────────────────────────────────────────────────────────────
+app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// ========== MANEJO DE ERRORES ==========
-app.use((err, req, res, next) => {
-    console.error('Error no manejado:', err);
-    res.status(500).json({
-        error: 'Error interno del servidor',
-        message: err.message
-    });
-});
-
-// ========== INICIALIZAR SERVIDOR ==========
-async function start() {
-    try {
-        await initializePool();
-        
-        app.listen(PORT, () => {
-            console.log(`
-╔════════════════════════════════════════╗
-║   🚀 Proyecto 19 - Servidor Activo    ║
-╠════════════════════════════════════════╣
-║   📍 URL: http://localhost:${PORT}       ║
-║   📊 Base de Datos: hospestar          ║
-║   ✅ Estado: Funcionando               ║
-╚════════════════════════════════════════╝
-
-📌 Abre tu navegador en: http://localhost:${PORT}
-            `);
-        });
-    } catch (error) {
-        console.error('❌ Error al iniciar servidor:', error);
-        process.exit(1);
-    }
-}
-
-// Iniciar
-start();
-
-// Manejo de cierre
-process.on('SIGTERM', async () => {
-    console.log('\n🛑 Cerrando servidor...');
-    if (pool) {
-        await pool.close();
-    }
-    process.exit(0);
+// ─── INICIAR ─────────────────────────────────────────────────────────────────
+app.listen(PORT, () => {
+    console.log(`\n🚀 Servidor corriendo en http://localhost:${PORT}`);
 });
